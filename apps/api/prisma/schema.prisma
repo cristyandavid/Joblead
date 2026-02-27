@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  CREW
+}
+
+enum JobStatus {
+  LEAD
+  ESTIMATING
+  APPROVED
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  INVOICED
+  PAID
+  CANCELED
+}
+
+enum JobPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum EstimateStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  EMT
+  CREDIT
+  CHEQUE
+  OTHER
+}
+
+enum JobEventType {
+  STATUS_CHANGE
+  NOTE
+  FILE_ADDED
+  PAYMENT_RECORDED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(CREW)
+  createdAt    DateTime @default(now())
+
+  jobs          Job[]
+  events        JobEvent[]
+  files         FileAttachment[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Customer {
+  id          String    @id @default(uuid())
+  name        String
+  phone       String
+  email       String?
+  companyName String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  addresses Address[]
+  jobs      Job[]
+}
+
+model Address {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String?
+  street     String
+  city       String
+  province   String
+  postalCode String
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  jobs Job[]
+
+  @@index([customerId])
+}
+
+model Job {
+  id          String      @id @default(uuid())
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  addressId   String
+  address     Address     @relation(fields: [addressId], references: [id])
+  title       String
+  description String?
+  status      JobStatus   @default(LEAD)
+  priority    JobPriority @default(MEDIUM)
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  depositRequired Boolean  @default(false)
+  depositAmount   Int?
+
+  totalEstimateCents Int @default(0)
+  totalInvoiceCents  Int @default(0)
+  totalPaidCents     Int @default(0)
+
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  estimates Job_Estimate[]
+  invoices  Invoice[]
+  events    JobEvent[]
+  files     FileAttachment[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdByUserId])
+}
+
+model Job_Estimate {
+  id            String         @id @default(uuid())
+  jobId         String
+  job           Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  status        EstimateStatus @default(DRAFT)
+
+  subtotalCents Int
+  taxCents      Int
+  totalCents    Int
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lineItems EstimateLineItem[]
+
+  @@unique([jobId, versionNumber])
+  @@index([jobId])
+  @@map("estimates")
+}
+
+model EstimateLineItem {
+  id          String       @id @default(uuid())
+  estimateId  String
+  estimate    Job_Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  qty         Float
+  unit        String
+  unitPriceCents Int
+  totalCents  Int
+
+  @@index([estimateId])
+  @@map("estimate_line_items")
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  jobId         String
+  job           Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  invoiceNumber String        @unique
+  status        InvoiceStatus @default(DRAFT)
+
+  subtotalCents Int
+  taxCents      Int
+  totalCents    Int
+
+  dueDate   DateTime?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  lineItems InvoiceLineItem[]
+  payments  Payment[]
+
+  @@index([jobId])
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  qty         Float
+  unit        String
+  unitPriceCents Int
+  totalCents  Int
+
+  @@index([invoiceId])
+  @@map("invoice_line_items")
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amountCents Int
+  method      PaymentMethod
+  receivedAt  DateTime
+  notes       String?
+  createdAt   DateTime      @default(now())
+
+  @@index([invoiceId])
+}
+
+model JobEvent {
+  id              String       @id @default(uuid())
+  jobId           String
+  job             Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  type            JobEventType
+  message         String
+  fromStatus      JobStatus?
+  toStatus        JobStatus?
+  createdByUserId String
+  createdBy       User         @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime     @default(now())
+
+  @@index([jobId])
+  @@index([createdByUserId])
+  @@map("job_events")
+}
+
+model FileAttachment {
+  id               String   @id @default(uuid())
+  jobId            String
+  job              Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  url              String
+  filename         String
+  mimeType         String
+  sizeBytes        Int
+  uploadedByUserId String
+  uploadedBy       User     @relation(fields: [uploadedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  @@index([jobId])
+  @@map("file_attachments")
+}
