@@ -14,6 +14,7 @@ import {
   JobQueryDto,
   isValidStatusTransition,
   paginate,
+  JobStatus as SharedJobStatus,
 } from '@joblead/shared';
 
 @Injectable()
@@ -163,10 +164,10 @@ export class JobsService {
       throw new ForbiddenException('Crew members cannot change job status');
     }
 
-    const fromStatus = job.status as JobStatus;
-    const toStatus = dto.status;
+    const fromStatus = job.status; // Prisma JobStatus
+    const toStatus = dto.status as JobStatus; // dto uses shared enum string values
 
-    if (!isValidStatusTransition(fromStatus, toStatus)) {
+    if (!isValidStatusTransition(fromStatus as unknown as SharedJobStatus, toStatus as unknown as SharedJobStatus)) {
       throw new BadRequestException(
         `Invalid status transition from ${fromStatus} to ${toStatus}`,
       );
